@@ -29,7 +29,7 @@ const EMBED_COLOR = 0x9B59B6;
 const FOOTER_TEXT = '🔥 𝙎𝙣𝙞𝙥𝙚𝙭ᴸᵘᵃ ᶜᵒᵐᵐᵘⁿⁱᵗʸ 👻';
 
 const FOOTER_IMAGE =
-  'https://cdn.discordapp.com/attachments/1381714599442649138/1490159031711694868/file_000000008870720e9825f146362ee8a53.png?ex=69d30a3e&is=69d1b8be&hm=f92b8ea8e920e66c43feabfcc2dfb57beaf0431f00b4cf37971d6655210f70c6&';
+  'https://cdn.discordapp.com/attachments/1381714599442649138/1490162386122965042/file_000000008870720e9825f146362ee8a53.png?ex=69d30d5e&is=69d1bbde&hm=a83ebf55961971ff22a936acc7a300f46b6d55c568a21d6771d3a7cfde1a369b&';
 
 const ALLOWED_USER_ID = '1030955815114391592';
 
