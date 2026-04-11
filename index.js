@@ -39,8 +39,6 @@ const ADMIN_USER_IDS = [
 
 const SELLERS_ROLE_ID = '1397770120910209146';
 
-const AUTO_CLOSE_DELAY_MS = 5 * 60 * 1000;
-
 const CHANNEL_DELETE_DELAY_MS = 5 * 1000;
 
 const MAX_TICKETS_PER_USER = 2;
@@ -98,7 +96,6 @@ function createTicket(channelId, data) {
     itemEmbedMessageId: data.itemEmbedMessageId || null,
     welcomeEmbedMessageId: data.welcomeEmbedMessageId || null,
     vendorResponded: false,
-    closeTimer: null,
   });
   incrementUserTickets(data.creatorId);
 }
@@ -114,7 +111,6 @@ function restoreTicket(channelId, data) {
     itemEmbedMessageId: null,
     welcomeEmbedMessageId: null,
     vendorResponded: false,
-    closeTimer: null,
   });
   return ticketStore.get(channelId);
 }
@@ -156,7 +152,6 @@ function updateTicket(channelId, updates) {
 function deleteTicket(channelId) {
   const ticket = ticketStore.get(channelId);
   if (ticket) {
-    if (ticket.closeTimer) clearTimeout(ticket.closeTimer);
     decrementUserTickets(ticket.creatorId);
   }
   ticketStore.delete(channelId);
@@ -381,40 +376,6 @@ function buildVendorSelectEmbed() {
 }
 
 // ============================================================
-// AUTO-CLOSE
-// ============================================================
-
-function scheduleAutoClose(channel, channelId) {
-  const timer = setTimeout(async () => {
-    try {
-      if (!channel.deletable) return;
-      await deleteTicketChannel(channel);
-    } catch {}
-  }, AUTO_CLOSE_DELAY_MS);
-
-  updateTicket(channelId, { closeTimer: timer });
-}
-
-async function deleteTicketChannel(channel) {
-  const ticket = getTicket(channel.id);
-  if (ticket && ticket.closeTimer) {
-    clearTimeout(ticket.closeTimer);
-  }
-
-  deleteTicket(channel.id);
-
-  try {
-    await channel.delete('Ticket encerrado automaticamente por inatividade.');
-
-    if (channel.guild) {
-      await checkAndDeleteEmptyCategory(channel.guild);
-    }
-  } catch (error) {
-    console.error('Erro ao deletar canal:', error);
-  }
-}
-
-// ============================================================
 // HANDLER: SLASH COMMAND /painel_dos_vendedores
 // ============================================================
 
@@ -537,8 +498,6 @@ async function handleSellButton(interaction) {
   });
   updateTicket(channel.id, { welcomeEmbedMessageId: welcomeMsg.id });
 
-  scheduleAutoClose(channel, channel.id);
-
   await interaction.editReply({ content: `✅ Seu ticket de venda foi criado: ${channel}` });
 }
 
@@ -570,11 +529,6 @@ async function handleCloseButton(interaction) {
 
   await interaction.editReply({ embeds: [closingEmbed], components: [] });
 
-  const ticket = getTicket(channel.id);
-  if (ticket && ticket.closeTimer) {
-    clearTimeout(ticket.closeTimer);
-  }
-
   deleteTicket(channel.id);
 
   setTimeout(async () => {
@@ -599,7 +553,6 @@ async function handleSelectItemButton(interaction) {
     return interaction.reply({ content: '❌ Apenas o criador do ticket pode selecionar o item.', flags: 64 });
   }
 
-  // Verificar se o item já foi selecionado
   if (ticket.itemSelected) {
     return interaction.reply({ 
       content: '❌ Você já selecionou um item para este ticket! Aguarde o vendedor.',
@@ -737,8 +690,6 @@ async function handleVendorSelect(interaction) {
   const itemMsg = await channel.send({ embeds: [buildItemSelectionEmbed(null, false)], components: [selectItemRow] });
   updateTicket(channel.id, { itemEmbedMessageId: itemMsg.id });
 
-  scheduleAutoClose(channel, channel.id);
-
   await interaction.editReply({
     content: `✅ Seu ticket de compra/troca com **${vendorLabel}** foi criado: ${channel}`,
   });
@@ -756,7 +707,6 @@ async function handleItemSelectModal(interaction) {
     return interaction.reply({ content: '❌ Apenas o criador do ticket pode selecionar o item.', flags: 64 });
   }
 
-  // Verificar se o item já foi selecionado
   if (ticket.itemSelected) {
     return interaction.reply({ 
       content: '❌ Você já selecionou um item para este ticket!',
@@ -784,7 +734,6 @@ async function handleItemSelectModal(interaction) {
     .setLabel('🔴 Fechar Ticket')
     .setStyle(ButtonStyle.Danger);
 
-  // Remover o botão de selecionar item após seleção
   const selectItemRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('ticket_notify_vendor').setLabel('🔔 Notificar Vendedor').setStyle(ButtonStyle.Success),
     closeButton
@@ -801,7 +750,6 @@ async function handleItemSelectModal(interaction) {
     await interaction.channel.send({ embeds: [buildItemSelectionEmbed(itemName, true)], components: [selectItemRow] });
   }
   
-  // Enviar uma mensagem de confirmação
   await interaction.channel.send(`✅ **Item selecionado com sucesso!**\n📦 Item: **${itemName}**\n\nAgora clique no botão **"Notificar Vendedor"** para chamar o vendedor.`);
 }
 
