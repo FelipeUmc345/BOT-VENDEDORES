@@ -94,6 +94,7 @@ function createTicket(channelId, data) {
     vendorId: data.vendorId || null,
     type: data.type,
     selectedItem: null,
+    itemSelected: false,
     itemEmbedMessageId: data.itemEmbedMessageId || null,
     welcomeEmbedMessageId: data.welcomeEmbedMessageId || null,
     vendorResponded: false,
@@ -109,6 +110,7 @@ function restoreTicket(channelId, data) {
     vendorId: data.vendorId || null,
     type: data.type,
     selectedItem: null,
+    itemSelected: false,
     itemEmbedMessageId: null,
     welcomeEmbedMessageId: null,
     vendorResponded: false,
@@ -175,38 +177,38 @@ function canCloseTicket(channel, userId, memberRoles, sellersRoleId) {
 
 async function getOrCreateTicketsCategory(guild) {
   if (ticketsCategory) return ticketsCategory;
-  
+
   let category = guild.channels.cache.find(
     (ch) => ch.name === TICKETS_CATEGORY_NAME && ch.type === 4
   );
-  
+
   if (!category) {
     category = await guild.channels.create({
       name: TICKETS_CATEGORY_NAME,
       type: 4,
     });
   }
-  
+
   const targetCategory = guild.channels.cache.get(CATEGORY_ID_TO_BE_BELOW);
   if (targetCategory && targetCategory.type === 4) {
     const position = targetCategory.position;
     await category.setPosition(position + 1);
   }
-  
+
   ticketsCategory = category;
   return category;
 }
 
 async function checkAndDeleteEmptyCategory(guild) {
   if (!ticketsCategory) return;
-  
+
   const category = await guild.channels.fetch(ticketsCategory.id).catch(() => null);
   if (!category) return;
-  
+
   const channelsInCategory = guild.channels.cache.filter(
     (ch) => ch.parentId === category.id
   );
-  
+
   if (channelsInCategory.size === 0) {
     try {
       await category.delete();
@@ -234,6 +236,7 @@ async function buildAdminOverwrites(guild) {
     PermissionFlagsBits.ViewChannel,
     PermissionFlagsBits.SendMessages,
     PermissionFlagsBits.ReadMessageHistory,
+    PermissionFlagsBits.AttachFiles,
   ];
   const overwrites = [];
   for (const id of allIds) {
@@ -290,11 +293,21 @@ function buildMainPanelEmbed() {
   );
 }
 
-function buildItemSelectionEmbed(item = null) {
+function buildItemSelectionEmbed(item = null, itemSelected = false) {
   const itemDisplay = item ? item : 'Aguardando...';
-  const status = item
-    ? '✅ Item selecionado! Aguardando o vendedor...'
-    : '⏳ Status: Aguardando seleção do item...';
+  let status;
+  let selecionarItemText = '';
+  
+  if (itemSelected) {
+    status = '✅ **Item selecionado com sucesso!**\n✅ Aguardando o vendedor confirmar...';
+    selecionarItemText = '✅ **Item já selecionado!** O vendedor já foi notificado.';
+  } else if (item) {
+    status = '✅ Item selecionado! Aguardando o vendedor...';
+    selecionarItemText = '✅ **Item já selecionado!** O vendedor já foi notificado.';
+  } else {
+    status = '⏳ Status: Aguardando seleção do item...';
+    selecionarItemText = 'Clique no botão **Selecionar Item** abaixo.';
+  }
 
   return applyDefaults(
     new EmbedBuilder()
@@ -306,7 +319,7 @@ function buildItemSelectionEmbed(item = null) {
         `Item: **${itemDisplay}**\n\n` +
         '━━━━━━━━━━━━━━━━━━\n\n' +
         '**2 - Como Selecionar**\n\n' +
-        'Clique no botão **Selecionar Item** abaixo.\n\n' +
+        `${selecionarItemText}\n\n` +
         'Após clicar:\n' +
         '• Um campo de texto será aberto\n' +
         '• Digite o nome do item desejado\n' +
@@ -365,7 +378,7 @@ function buildVendorSelectEmbed() {
         '📌 Após selecionar, o ticket será criado automaticamente.'
       )
   );
-    }
+}
 
 // ============================================================
 // AUTO-CLOSE
@@ -387,12 +400,12 @@ async function deleteTicketChannel(channel) {
   if (ticket && ticket.closeTimer) {
     clearTimeout(ticket.closeTimer);
   }
-  
+
   deleteTicket(channel.id);
-  
+
   try {
     await channel.delete('Ticket encerrado automaticamente por inatividade.');
-    
+
     if (channel.guild) {
       await checkAndDeleteEmptyCategory(channel.guild);
     }
@@ -478,7 +491,7 @@ async function handleSellButton(interaction) {
   }
 
   const category = await getOrCreateTicketsCategory(guild);
-  
+
   const sellersRole = guild.roles.cache.get(SELLERS_ROLE_ID) ?? await guild.roles.fetch(SELLERS_ROLE_ID);
   const adminOverwrites = await buildAdminOverwrites(guild);
 
@@ -486,7 +499,7 @@ async function handleSellButton(interaction) {
     { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
     {
       id: creatorMember,
-      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles],
     },
     ...adminOverwrites,
   ];
@@ -494,7 +507,7 @@ async function handleSellButton(interaction) {
   if (sellersRole) {
     permissionOverwrites.push({
       id: sellersRole,
-      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles],
     });
   }
 
@@ -509,15 +522,15 @@ async function handleSellButton(interaction) {
 
   createTicket(channel.id, { creatorId: creator.id, vendorId: null, type: 'sell' });
 
-  await channel.send({ content: `👋 ${creator} seu ticket de venda foi aberto!` });
+  await channel.send({ content: `👋 ${creator} seu ticket de venda foi aberto!\n\n📎 **Lembrete:** Você pode enviar imagens e arquivos aqui normalmente.` });
 
   const closeButton = new ButtonBuilder()
     .setCustomId('ticket_close')
     .setLabel('🔴 Fechar Ticket')
     .setStyle(ButtonStyle.Danger);
-  
+
   const row = new ActionRowBuilder().addComponents(closeButton);
-  
+
   const welcomeMsg = await channel.send({ 
     embeds: [buildSellTicketWelcomeEmbed(false)],
     components: [row]
@@ -556,12 +569,12 @@ async function handleCloseButton(interaction) {
   );
 
   await interaction.editReply({ embeds: [closingEmbed], components: [] });
-  
+
   const ticket = getTicket(channel.id);
   if (ticket && ticket.closeTimer) {
     clearTimeout(ticket.closeTimer);
   }
-  
+
   deleteTicket(channel.id);
 
   setTimeout(async () => {
@@ -584,6 +597,14 @@ async function handleSelectItemButton(interaction) {
 
   if (!ticket || (!admin && ticket.creatorId !== interaction.user.id)) {
     return interaction.reply({ content: '❌ Apenas o criador do ticket pode selecionar o item.', flags: 64 });
+  }
+
+  // Verificar se o item já foi selecionado
+  if (ticket.itemSelected) {
+    return interaction.reply({ 
+      content: '❌ Você já selecionou um item para este ticket! Aguarde o vendedor.',
+      flags: 64 
+    });
   }
 
   const modal = new ModalBuilder().setCustomId('item_select_modal').setTitle('Selecionar Item');
@@ -616,8 +637,15 @@ async function handleNotifyVendorButton(interaction) {
     return interaction.reply({ content: '❌ Nenhum vendedor associado a este ticket.', flags: 64 });
   }
 
+  if (!ticket.selectedItem) {
+    return interaction.reply({ 
+      content: '❌ Você precisa selecionar um item primeiro antes de notificar o vendedor!',
+      flags: 64 
+    });
+  }
+
   await interaction.reply({
-    content: `🔔 <@${ticket.vendorId}>, você tem um cliente aguardando atendimento neste ticket!`,
+    content: `🔔 <@${ticket.vendorId}>, você tem um cliente aguardando atendimento neste ticket!\n📦 Item solicitado: **${ticket.selectedItem}**`,
   });
 }
 
@@ -675,11 +703,11 @@ async function handleVendorSelect(interaction) {
       { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
       {
         id: creatorMember,
-        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles],
       },
       {
         id: vendorMember,
-        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles],
       },
       ...adminOverwrites,
     ],
@@ -692,7 +720,7 @@ async function handleVendorSelect(interaction) {
     .setCustomId('ticket_close')
     .setLabel('🔴 Fechar Ticket')
     .setStyle(ButtonStyle.Danger);
-  
+
   const selectItemRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('ticket_select_item').setLabel('🛒 Selecionar Item').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('ticket_notify_vendor').setLabel('🔔 Notificar Vendedor').setStyle(ButtonStyle.Success),
@@ -702,10 +730,11 @@ async function handleVendorSelect(interaction) {
   await channel.send({
     content:
       `👋 Olá ${creator}! Seu ticket de compra/troca com **${vendorLabel}** foi aberto.\n\n` +
-      `<@${vendorId}>, você foi chamado para atender este ticket.`,
+      `<@${vendorId}>, você foi chamado para atender este ticket.\n\n` +
+      `📎 **Lembrete:** Você pode enviar imagens e arquivos aqui normalmente.`,
   });
 
-  const itemMsg = await channel.send({ embeds: [buildItemSelectionEmbed(null)], components: [selectItemRow] });
+  const itemMsg = await channel.send({ embeds: [buildItemSelectionEmbed(null, false)], components: [selectItemRow] });
   updateTicket(channel.id, { itemEmbedMessageId: itemMsg.id });
 
   scheduleAutoClose(channel, channel.id);
@@ -727,13 +756,25 @@ async function handleItemSelectModal(interaction) {
     return interaction.reply({ content: '❌ Apenas o criador do ticket pode selecionar o item.', flags: 64 });
   }
 
+  // Verificar se o item já foi selecionado
+  if (ticket.itemSelected) {
+    return interaction.reply({ 
+      content: '❌ Você já selecionou um item para este ticket!',
+      flags: 64 
+    });
+  }
+
   const itemName = interaction.fields.getTextInputValue('item_name').trim();
 
   if (!itemName) {
     return interaction.reply({ content: '❌ O nome do item não pode estar vazio.', flags: 64 });
   }
 
-  updateTicket(interaction.channel.id, { selectedItem: itemName });
+  updateTicket(interaction.channel.id, { 
+    selectedItem: itemName,
+    itemSelected: true 
+  });
+  
   await interaction.deferUpdate();
 
   const { itemEmbedMessageId } = ticket;
@@ -742,9 +783,9 @@ async function handleItemSelectModal(interaction) {
     .setCustomId('ticket_close')
     .setLabel('🔴 Fechar Ticket')
     .setStyle(ButtonStyle.Danger);
-  
+
+  // Remover o botão de selecionar item após seleção
   const selectItemRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('ticket_select_item').setLabel('🛒 Selecionar Item').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('ticket_notify_vendor').setLabel('🔔 Notificar Vendedor').setStyle(ButtonStyle.Success),
     closeButton
   );
@@ -752,13 +793,16 @@ async function handleItemSelectModal(interaction) {
   if (itemEmbedMessageId) {
     try {
       const msg = await interaction.channel.messages.fetch(itemEmbedMessageId);
-      await msg.edit({ embeds: [buildItemSelectionEmbed(itemName)], components: [selectItemRow] });
+      await msg.edit({ embeds: [buildItemSelectionEmbed(itemName, true)], components: [selectItemRow] });
     } catch {
-      await interaction.channel.send({ embeds: [buildItemSelectionEmbed(itemName)], components: [selectItemRow] });
+      await interaction.channel.send({ embeds: [buildItemSelectionEmbed(itemName, true)], components: [selectItemRow] });
     }
   } else {
-    await interaction.channel.send({ embeds: [buildItemSelectionEmbed(itemName)], components: [selectItemRow] });
+    await interaction.channel.send({ embeds: [buildItemSelectionEmbed(itemName, true)], components: [selectItemRow] });
   }
+  
+  // Enviar uma mensagem de confirmação
+  await interaction.channel.send(`✅ **Item selecionado com sucesso!**\n📦 Item: **${itemName}**\n\nAgora clique no botão **"Notificar Vendedor"** para chamar o vendedor.`);
 }
 
 // ============================================================
@@ -782,14 +826,14 @@ async function handleMessage(message) {
 
   try {
     const msg = await message.channel.messages.fetch(ticket.welcomeEmbedMessageId);
-    
+
     const closeButton = new ButtonBuilder()
       .setCustomId('ticket_close')
       .setLabel('🔴 Fechar Ticket')
       .setStyle(ButtonStyle.Danger);
-    
+
     const row = new ActionRowBuilder().addComponents(closeButton);
-    
+
     await msg.edit({ embeds: [buildSellTicketWelcomeEmbed(true)], components: [row] });
   } catch (err) {
     console.error('[MessageHandler] Falha ao atualizar embed de venda:', err);
