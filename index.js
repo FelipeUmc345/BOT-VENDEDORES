@@ -50,9 +50,7 @@ const VENDORS = [
   { label: 'Kpax',    value: '1030955815114391592', description: 'Escolha o Vendedor Kpax para trocar ou comprar.' },
   { label: 'KZ',      value: '1404535359886463137', description: 'Escolha o Vendedor KZ para trocar ou comprar.' },
   { label: 'Japa',    value: '1411787311884140574', description: 'Escolha o vendedor Japa para trocar ou comprar.' },
-  { label: 'Kiwi',    value: '1351698009800310804', description: 'Escolha o vendedor Kiwi para trocar ou comprar.' },
   { label: 'Spectre', value: '1267640943633240096', description: 'Escolha o vendedor Spectre para trocar ou comprar.' },
-  { label: 'Menor',   value: '1452255685357080638', description: 'Escolha o vendedor Menor para trocar ou comprar.' },
   { label: 'Lordz',   value: '1261370166172979220', description: 'Escolha o vendedor Lordz para trocar ou comprar.' },
   { label: 'Pedro',   value: '1428541375896490087', description: 'Escolha o vendedor Pedro para trocar ou comprar.' },
   { label: 'Oruam',   value: '1395226016624017571', description: 'Escolha o vendedor Oruam para trocar ou comprar.' },
@@ -357,7 +355,7 @@ function buildVendorSelectEmbed() {
         '📌 Após selecionar, o ticket será criado automaticamente.'
       )
   );
-        }
+                                                 }
 
 // ============================================================
 // HANDLER: SLASH COMMAND
