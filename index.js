@@ -28,8 +28,7 @@ const EMBED_COLOR = 0x9B59B6;
 
 const FOOTER_TEXT = '🔥 𝙎𝙣𝙞𝙥𝙚𝙭ᴸᵘᵃ ᶜᵒᵐᵐᵘⁿⁱᵗʸ 👻';
 
-const FOOTER_IMAGE =
-  'https://cdn.discordapp.com/attachments/1381714599442649138/1490162386122965042/file_000000008870720e9825f146362ee8a53.png?ex=69d30d5e&is=69d1bbde&hm=a83ebf55961971ff22a936acc7a300f46b6d55c568a21d6771d3a7cfde1a369b&';
+const THUMBNAIL_URL = 'https://cdn.discordapp.com/attachments/1381714599442649138/1497828948644462602/standard_1.gif';
 
 const ALLOWED_USER_ID = '1030955815114391592';
 
@@ -39,12 +38,11 @@ const ADMIN_USER_IDS = [
 
 const SELLERS_ROLE_ID = '1397770120910209146';
 
-const CHANNEL_DELETE_DELAY_MS = 5 * 1000;
+const CHANNEL_DELETE_DELAY_MS = 0; // DELETA INSTANTANEAMENTE
 
 const MAX_TICKETS_PER_USER = 2;
 
-const CATEGORY_ID_TO_BE_BELOW = '1301200179294113792';
-const TICKETS_CATEGORY_NAME = 'TICKETS DOS VENDEDORES';
+const TICKETS_CATEGORY_ID = '1497714791303872623';
 
 const VENDORS = [
   { label: 'Kpax',    value: '1030955815114391592', description: 'Escolha o Vendedor Kpax para trocar ou comprar.' },
@@ -62,7 +60,7 @@ const VENDORS = [
 ];
 
 // ============================================================
-// TICKET STORE (memória + recuperação pelo tópico do canal)
+// TICKET STORE
 // ============================================================
 
 const ticketStore = new Map();
@@ -174,46 +172,18 @@ function canCloseTicket(channel, userId, memberRoles, sellersRoleId) {
 async function getOrCreateTicketsCategory(guild) {
   if (ticketsCategory) return ticketsCategory;
 
-  let category = guild.channels.cache.find(
-    (ch) => ch.name === TICKETS_CATEGORY_NAME && ch.type === 4
-  );
+  let category = guild.channels.cache.get(TICKETS_CATEGORY_ID);
 
   if (!category) {
     category = await guild.channels.create({
-      name: TICKETS_CATEGORY_NAME,
+      name: "TICKETS",
       type: 4,
     });
-  }
-
-  const targetCategory = guild.channels.cache.get(CATEGORY_ID_TO_BE_BELOW);
-  if (targetCategory && targetCategory.type === 4) {
-    const position = targetCategory.position;
-    await category.setPosition(position + 1);
+    console.log(`[CATEGORY] Categoria criada com ID: ${category.id}`);
   }
 
   ticketsCategory = category;
   return category;
-}
-
-async function checkAndDeleteEmptyCategory(guild) {
-  if (!ticketsCategory) return;
-
-  const category = await guild.channels.fetch(ticketsCategory.id).catch(() => null);
-  if (!category) return;
-
-  const channelsInCategory = guild.channels.cache.filter(
-    (ch) => ch.parentId === category.id
-  );
-
-  if (channelsInCategory.size === 0) {
-    try {
-      await category.delete();
-      ticketsCategory = null;
-      console.log('✅ Categoria de tickets removida por estar vazia');
-    } catch (error) {
-      console.error('❌ Erro ao deletar categoria vazia:', error);
-    }
-  }
 }
 
 // ============================================================
@@ -251,7 +221,7 @@ async function buildAdminOverwrites(guild) {
 function applyDefaults(embed) {
   return embed
     .setColor(EMBED_COLOR)
-    .setImage(FOOTER_IMAGE)
+    .setThumbnail(THUMBNAIL_URL)
     .setFooter({ text: FOOTER_TEXT });
 }
 
@@ -331,31 +301,39 @@ function buildItemSelectionEmbed(item = null, itemSelected = false) {
   );
 }
 
-function buildSellTicketWelcomeEmbed(responded = false) {
-  const status = responded
-    ? '✅ **Status:** Vendedor respondeu! Atendimento em andamento...'
-    : '⏳ **Status:** Aguardando resposta do vendedor...';
-
+function buildBuyTicketWelcomeEmbed(guild, creator, vendorId) {
+  const vendor = VENDORS.find(v => v.value === vendorId);
+  const vendorName = vendor ? vendor.label : 'Vendedor';
+  
   return applyDefaults(
     new EmbedBuilder()
-      .setTitle('🔔 Ticket Criado com Sucesso')
+      .setTitle('🎫 Ticket criado com sucesso!')
       .setDescription(
-        '**Seu ticket foi aberto corretamente. Aguarde enquanto um vendedor responde neste canal.**\n\n' +
+        `Olá <@${creator.id}>, seu atendimento foi iniciado ✅\n\n` +
         '━━━━━━━━━━━━━━━━━━\n\n' +
-        '**1 - Ticket Registrado**\n' +
-        '> - **Seu pedido foi enviado para a equipe de vendedores.**\n\n' +
+        `👤 **Usuário:**  \n${creator.username} (${creator.id})\n\n` +
+        `📂 **Categoria:**  \nComprar/Trocar\n\n` +
+        `👨‍💼 **Vendedor:**  \n${vendorName}\n\n` +
+        `📦 **Item Selecionado:**  \nAguardando seleção...\n\n` +
         '━━━━━━━━━━━━━━━━━━\n\n' +
-        '**2 - Aguarde uma Resposta**\n' +
-        '> - **Um vendedor responderá aqui em breve.**\n' +
-        '> - **Permaneça neste canal para continuar o atendimento.**\n\n' +
+        '⏳ Aguarde um vendedor assumir o atendimento.'
+      )
+  );
+}
+
+function buildSellTicketWelcomeEmbed(creator) {
+  return applyDefaults(
+    new EmbedBuilder()
+      .setTitle('🎫 Ticket criado com sucesso!')
+      .setDescription(
+        `Olá <@${creator.id}>, seu atendimento de **venda** foi iniciado ✅\n\n` +
         '━━━━━━━━━━━━━━━━━━\n\n' +
-        '**3 - Durante a Espera**\n' +
-        '> - **Evite enviar múltiplas mensagens.**\n' +
-        '> - **Não marque membros ou vendedores sem necessidade.**\n\n' +
+        `👤 **Usuário:**  \n${creator.username} (${creator.id})\n\n` +
+        `📂 **Categoria Selecionada:**  \nVenda\n\n` +
         '━━━━━━━━━━━━━━━━━━\n\n' +
-        '**4 - Status do Ticket**\n' +
-        `> - ${status}\n\n` +
-        '━━━━━━━━━━━━━━━━━━'
+        '⏳ **Status:** Aguardando algum comprador responder...\n\n' +
+        '━━━━━━━━━━━━━━━━━━\n\n' +
+        '⚠️ Evite spam ou marcações desnecessárias enquanto aguarda.'
       )
   );
 }
@@ -377,7 +355,7 @@ function buildVendorSelectEmbed() {
 }
 
 // ============================================================
-// HANDLER: SLASH COMMAND /painel_dos_vendedores
+// HANDLER: SLASH COMMAND
 // ============================================================
 
 async function handleCommand(interaction) {
@@ -484,8 +462,6 @@ async function handleSellButton(interaction) {
 
   createTicket(channel.id, { creatorId: creator.id, vendorId: null, type: 'sell' });
 
-  await channel.send({ content: `👋 ${creator} seu ticket de venda foi aberto!\n\n📎 **Lembrete:** Você pode enviar imagens e arquivos aqui normalmente.` });
-
   const closeButton = new ButtonBuilder()
     .setCustomId('ticket_close')
     .setLabel('🔴 Fechar Ticket')
@@ -494,7 +470,8 @@ async function handleSellButton(interaction) {
   const row = new ActionRowBuilder().addComponents(closeButton);
 
   const welcomeMsg = await channel.send({ 
-    embeds: [buildSellTicketWelcomeEmbed(false)],
+    content: `<@${creator.id}>`,
+    embeds: [buildSellTicketWelcomeEmbed(creator)],
     components: [row]
   });
   updateTicket(channel.id, { welcomeEmbedMessageId: welcomeMsg.id });
@@ -507,8 +484,6 @@ async function handleSellButton(interaction) {
 // ============================================================
 
 async function handleCloseButton(interaction) {
-  await interaction.deferReply();
-
   const channel = interaction.channel;
   const userId = interaction.user.id;
   const memberRoles = interaction.member.roles.cache;
@@ -517,18 +492,13 @@ async function handleCloseButton(interaction) {
   const canClose = admin || canCloseTicket(channel, userId, memberRoles, SELLERS_ROLE_ID);
 
   if (!canClose) {
-    return interaction.editReply({
+    return interaction.reply({
       content: '❌ Apenas o criador do ticket ou o vendedor responsável podem fechá-lo.',
+      flags: 64,
     });
   }
 
-  const closingEmbed = applyDefaults(
-    new EmbedBuilder()
-      .setTitle('🔒 Ticket Encerrado')
-      .setDescription('✅ O atendimento foi encerrado.\n\nEste canal será deletado em **5 segundos**...')
-  );
-
-  await interaction.editReply({ embeds: [closingEmbed], components: [] });
+  await interaction.reply({ content: '🔒 Ticket fechado com sucesso!', flags: 64 });
 
   deleteTicket(channel.id);
 
@@ -536,7 +506,14 @@ async function handleCloseButton(interaction) {
     try { 
       await channel.delete('Ticket encerrado pelo usuário.');
       if (channel.guild) {
-        await checkAndDeleteEmptyCategory(channel.guild);
+        const category = channel.guild.channels.cache.get(TICKETS_CATEGORY_ID);
+        const channelsInCategory = channel.guild.channels.cache.filter(
+          (ch) => ch.parentId === TICKETS_CATEGORY_ID
+        );
+        if (channelsInCategory.size === 0 && category) {
+          await category.delete();
+          ticketsCategory = null;
+        }
       }
     } catch {}
   }, CHANNEL_DELETE_DELAY_MS);
@@ -682,13 +659,10 @@ async function handleVendorSelect(interaction) {
   );
 
   await channel.send({
-    content:
-      `👋 Olá ${creator}! Seu ticket de compra/troca com **${vendorLabel}** foi aberto.\n\n` +
-      `<@${vendorId}>, você foi chamado para atender este ticket.\n\n` +
-      `📎 **Lembrete:** Você pode enviar imagens e arquivos aqui normalmente.`,
+    content: `<@${creator.id}> <@${vendorId}>`,
   });
 
-  const itemMsg = await channel.send({ embeds: [buildItemSelectionEmbed(null, false)], components: [selectItemRow] });
+  const itemMsg = await channel.send({ embeds: [buildBuyTicketWelcomeEmbed(guild, creator, vendorId)], components: [selectItemRow] });
   updateTicket(channel.id, { itemEmbedMessageId: itemMsg.id });
 
   await interaction.editReply({
@@ -697,7 +671,7 @@ async function handleVendorSelect(interaction) {
 }
 
 // ============================================================
-// HANDLER: MODAL — NOME DO ITEM
+// HANDLER: MODAL
 // ============================================================
 
 async function handleItemSelectModal(interaction) {
@@ -755,42 +729,7 @@ async function handleItemSelectModal(interaction) {
 }
 
 // ============================================================
-// HANDLER: MENSAGENS
-// ============================================================
-
-async function handleMessage(message) {
-  if (message.author.bot) return;
-  if (!message.guild) return;
-
-  const ticket = getTicketWithRecovery(message.channel);
-  if (!ticket || ticket.type !== 'sell') return;
-  if (ticket.vendorResponded) return;
-
-  const member = message.member;
-  if (!member || !member.roles.cache.has(SELLERS_ROLE_ID)) return;
-
-  updateTicket(message.channel.id, { vendorResponded: true });
-
-  if (!ticket.welcomeEmbedMessageId) return;
-
-  try {
-    const msg = await message.channel.messages.fetch(ticket.welcomeEmbedMessageId);
-
-    const closeButton = new ButtonBuilder()
-      .setCustomId('ticket_close')
-      .setLabel('🔴 Fechar Ticket')
-      .setStyle(ButtonStyle.Danger);
-
-    const row = new ActionRowBuilder().addComponents(closeButton);
-
-    await msg.edit({ embeds: [buildSellTicketWelcomeEmbed(true)], components: [row] });
-  } catch (err) {
-    console.error('[MessageHandler] Falha ao atualizar embed de venda:', err);
-  }
-}
-
-// ============================================================
-// HANDLER: TODAS AS INTERAÇÕES
+// HANDLER: INTERAÇÕES
 // ============================================================
 
 async function handleInteraction(interaction) {
@@ -831,7 +770,7 @@ async function handleInteraction(interaction) {
 }
 
 // ============================================================
-// BOT — INICIALIZAÇÃO
+// BOT
 // ============================================================
 
 const token = process.env.DISCORD_TOKEN;
@@ -857,7 +796,7 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
-client.once('clientReady', async () => {
+client.once('ready', async () => {
   console.log(`✅ Bot online como ${client.user.tag}`);
   console.log(`📌 ID do bot: ${client.user.id}`);
   console.log(`🌐 Em ${client.guilds.cache.size} servidor(es).`);
@@ -882,7 +821,6 @@ client.once('clientReady', async () => {
 });
 
 client.on('interactionCreate', handleInteraction);
-client.on('messageCreate', handleMessage);
 
 client.on('error', (error) => console.error('[Client Error]', error));
 client.on('warn', (info) => console.warn('[Client Warn]', info));
