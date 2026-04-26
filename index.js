@@ -28,6 +28,8 @@ const EMBED_COLOR = 0x9B59B6;
 
 const FOOTER_TEXT = '🔥 𝙎𝙣𝙞𝙥𝙚𝙭ᴸᵘᵃ ᶜᵒᵐᵐᵘⁿⁱᵗʸ 👻';
 
+const FOOTER_IMAGE = 'https://cdn.discordapp.com/attachments/1381714599442649138/1490162386122965042/file_000000008870720e9825f146362ee8a53.png';
+
 const THUMBNAIL_URL = 'https://cdn.discordapp.com/attachments/1381714599442649138/1497828948644462602/standard_1.gif';
 
 const ALLOWED_USER_ID = '1030955815114391592';
@@ -38,7 +40,7 @@ const ADMIN_USER_IDS = [
 
 const SELLERS_ROLE_ID = '1397770120910209146';
 
-const CHANNEL_DELETE_DELAY_MS = 0; // DELETA INSTANTANEAMENTE
+const CHANNEL_DELETE_DELAY_MS = 0;
 
 const MAX_TICKETS_PER_USER = 2;
 
@@ -48,7 +50,9 @@ const VENDORS = [
   { label: 'Kpax',    value: '1030955815114391592', description: 'Escolha o Vendedor Kpax para trocar ou comprar.' },
   { label: 'KZ',      value: '1404535359886463137', description: 'Escolha o Vendedor KZ para trocar ou comprar.' },
   { label: 'Japa',    value: '1411787311884140574', description: 'Escolha o vendedor Japa para trocar ou comprar.' },
+  { label: 'Kiwi',    value: '1351698009800310804', description: 'Escolha o vendedor Kiwi para trocar ou comprar.' },
   { label: 'Spectre', value: '1267640943633240096', description: 'Escolha o vendedor Spectre para trocar ou comprar.' },
+  { label: 'Menor',   value: '1452255685357080638', description: 'Escolha o vendedor Menor para trocar ou comprar.' },
   { label: 'Lordz',   value: '1261370166172979220', description: 'Escolha o vendedor Lordz para trocar ou comprar.' },
   { label: 'Pedro',   value: '1428541375896490087', description: 'Escolha o vendedor Pedro para trocar ou comprar.' },
   { label: 'Oruam',   value: '1395226016624017571', description: 'Escolha o vendedor Oruam para trocar ou comprar.' },
@@ -216,45 +220,48 @@ async function buildAdminOverwrites(guild) {
 // EMBEDS
 // ============================================================
 
-function applyDefaults(embed) {
+// Função para embeds dentro dos tickets (com thumbnail)
+function applyTicketEmbed(embed) {
   return embed
     .setColor(EMBED_COLOR)
     .setThumbnail(THUMBNAIL_URL)
     .setFooter({ text: FOOTER_TEXT });
 }
 
+// EMBED DO PAINEL PRINCIPAL - TEM IMAGEM GRANDE e NÃO TEM THUMBNAIL
 function buildMainPanelEmbed() {
-  return applyDefaults(
-    new EmbedBuilder()
-      .setTitle('🎫 Sistema Oficial de Tickets — 🔥 𝙎𝙣𝙞𝙥𝙚𝙭ᴸᵘᵃ ᶜᵒᵐᵐᵘⁿⁱᵗʸ 👻')
-      .setDescription(
-        'Nosso sistema de tickets foi criado para facilitar compras e vendas dentro do servidor, mantendo tudo organizado, seguro e rápido.\n\n' +
-        '━━━━━━━━━━━━━━━━━━\n\n' +
-        '**«1 - Ticket de Compra**\n\n' +
-        '- Abra um Ticket de Compra caso queira adquirir um item.\n' +
-        '- ✅ Escolha um vendedor específico\n' +
-        '- ✅ Apenas você e o vendedor terão acesso\n' +
-        '- ✅ Atendimento rápido e privado\n\n' +
-        '━━━━━━━━━━━━━━━━━━\n\n' +
-        '**«2 - Ticket de Venda**\n\n' +
-        '- Abra um Ticket de Venda caso queira vender seus itens.\n' +
-        '- ✅ Todos os vendedores autorizados podem visualizar\n' +
-        '- ✅ O primeiro vendedor disponível realizará o atendimento\n' +
-        '- ✅ Processo rápido e organizado\n\n' +
-        '━━━━━━━━━━━━━━━━━━\n\n' +
-        '**«3 - Regras Importantes**\n\n' +
-        '- ⚠️ Não envie Pix antes de confirmar o vendedor\n' +
-        '- ⚠️ Utilize apenas tickets oficiais\n' +
-        '- ⚠️ Evite negociações fora do servidor\n' +
-        '- ⚠️ A staff não se responsabiliza por acordos fora dos tickets\n\n' +
-        '━━━━━━━━━━━━━━━━━━\n\n' +
-        '**«4 - Atendimento**\n\n' +
-        '- 🔥 Atendimento rápido\n' +
-        '- 📋 Organização total\n' +
-        '- 🔒 Segurança garantida\n\n' +
-        '━━━━━━━━━━━━━━━━━━'
-      )
-  );
+  return new EmbedBuilder()
+    .setColor(EMBED_COLOR)
+    .setTitle('🎫 Sistema Oficial de Tickets — 🔥 𝙎𝙣𝙞𝙥𝙚𝙭ᴸᵘᵃ ᶜᵒᵐᵐᵘⁿⁱᵗʸ 👻')
+    .setDescription(
+      'Nosso sistema de tickets foi criado para facilitar compras e vendas dentro do servidor, mantendo tudo organizado, seguro e rápido.\n\n' +
+      '━━━━━━━━━━━━━━━━━━\n\n' +
+      '**«1 - Ticket de Compra**\n\n' +
+      '- Abra um Ticket de Compra caso queira adquirir um item.\n' +
+      '- ✅ Escolha um vendedor específico\n' +
+      '- ✅ Apenas você e o vendedor terão acesso\n' +
+      '- ✅ Atendimento rápido e privado\n\n' +
+      '━━━━━━━━━━━━━━━━━━\n\n' +
+      '**«2 - Ticket de Venda**\n\n' +
+      '- Abra um Ticket de Venda caso queira vender seus itens.\n' +
+      '- ✅ Todos os vendedores autorizados podem visualizar\n' +
+      '- ✅ O primeiro vendedor disponível realizará o atendimento\n' +
+      '- ✅ Processo rápido e organizado\n\n' +
+      '━━━━━━━━━━━━━━━━━━\n\n' +
+      '**«3 - Regras Importantes**\n\n' +
+      '- ⚠️ Não envie Pix antes de confirmar o vendedor\n' +
+      '- ⚠️ Utilize apenas tickets oficiais\n' +
+      '- ⚠️ Evite negociações fora do servidor\n' +
+      '- ⚠️ A staff não se responsabiliza por acordos fora dos tickets\n\n' +
+      '━━━━━━━━━━━━━━━━━━\n\n' +
+      '**«4 - Atendimento**\n\n' +
+      '- 🔥 Atendimento rápido\n' +
+      '- 📋 Organização total\n' +
+      '- 🔒 Segurança garantida\n\n' +
+      '━━━━━━━━━━━━━━━━━━'
+    )
+    .setImage(FOOTER_IMAGE)
+    .setFooter({ text: FOOTER_TEXT });
 }
 
 function buildItemSelectionEmbed(item = null, itemSelected = false) {
@@ -273,7 +280,7 @@ function buildItemSelectionEmbed(item = null, itemSelected = false) {
     selecionarItemText = 'Clique no botão **Selecionar Item** abaixo.';
   }
 
-  return applyDefaults(
+  return applyTicketEmbed(
     new EmbedBuilder()
       .setTitle('🛒 Sistema de Seleção de Item')
       .setDescription(
@@ -303,7 +310,7 @@ function buildBuyTicketWelcomeEmbed(guild, creator, vendorId) {
   const vendor = VENDORS.find(v => v.value === vendorId);
   const vendorName = vendor ? vendor.label : 'Vendedor';
   
-  return applyDefaults(
+  return applyTicketEmbed(
     new EmbedBuilder()
       .setTitle('🎫 Ticket criado com sucesso!')
       .setDescription(
@@ -320,7 +327,7 @@ function buildBuyTicketWelcomeEmbed(guild, creator, vendorId) {
 }
 
 function buildSellTicketWelcomeEmbed(creator) {
-  return applyDefaults(
+  return applyTicketEmbed(
     new EmbedBuilder()
       .setTitle('🎫 Ticket criado com sucesso!')
       .setDescription(
@@ -337,7 +344,7 @@ function buildSellTicketWelcomeEmbed(creator) {
 }
 
 function buildVendorSelectEmbed() {
-  return applyDefaults(
+  return applyTicketEmbed(
     new EmbedBuilder()
       .setTitle('🛒 Escolha do Vendedor')
       .setDescription(
@@ -496,7 +503,7 @@ async function handleCloseButton(interaction) {
     });
   }
 
-  await interaction.reply({ content: '🔒 Ticket fechado com sucesso!', flags: 64 });
+  await interaction.reply({ content: '🔒 Ticket fechado!', flags: 64 });
 
   deleteTicket(channel.id);
 
