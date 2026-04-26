@@ -306,7 +306,7 @@ function buildItemSelectionEmbed(item = null, itemSelected = false) {
   );
 }
 
-function buildBuyTicketWelcomeEmbed(guild, creator, vendorId) {
+function buildBuyTicketWelcomeEmbed(creator, vendorId) {
   const vendor = VENDORS.find(v => v.value === vendorId);
   const vendorName = vendor ? vendor.label : 'Vendedor';
   
@@ -357,7 +357,7 @@ function buildVendorSelectEmbed() {
         '📌 Após selecionar, o ticket será criado automaticamente.'
       )
   );
-}
+        }
 
 // ============================================================
 // HANDLER: SLASH COMMAND
@@ -667,7 +667,7 @@ async function handleVendorSelect(interaction) {
     content: `<@${creator.id}> <@${vendorId}>`,
   });
 
-  const itemMsg = await channel.send({ embeds: [buildBuyTicketWelcomeEmbed(guild, creator, vendorId)], components: [selectItemRow] });
+  const itemMsg = await channel.send({ embeds: [buildBuyTicketWelcomeEmbed(creator, vendorId)], components: [selectItemRow] });
   updateTicket(channel.id, { itemEmbedMessageId: itemMsg.id });
 
   await interaction.editReply({
