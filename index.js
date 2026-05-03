@@ -46,6 +46,11 @@ const MAX_TICKETS_PER_USER = 2;
 
 const TICKETS_CATEGORY_ID = '1497714791303872623';
 
+const REVIEW_CHANNEL_ID = '1437628585115648041';
+const SALE_LOG_CHANNEL_ID = '1439400182142734509';
+const COMPLETED_ROLE_ID = '1397781111219687485';
+
+// Lista de vendedores (Vitinho removido)
 const VENDORS = [
   { label: 'Kpax',    value: '1030955815114391592', description: 'Escolha o Vendedor Kpax para trocar ou comprar.' },
   { label: 'KZ',      value: '1404535359886463137', description: 'Escolha o Vendedor KZ para trocar ou comprar.' },
@@ -56,7 +61,6 @@ const VENDORS = [
   { label: 'Oruam',   value: '1395226016624017571', description: 'Escolha o vendedor Oruam para trocar ou comprar.' },
   { label: 'Laura',   value: '1236426708110934110', description: 'Escolha o vendedor Laura para trocar ou comprar.' },
   { label: 'Baby',    value: '1146443214312718396', description: 'Escolha o vendedor Baby para trocar ou comprar.' },
-  { label: 'Vitinho', value: '1488268986209538389', description: 'Escolha o vendedor Vitinho para trocar ou comprar.' },
 ];
 
 // ============================================================
@@ -66,6 +70,23 @@ const VENDORS = [
 const ticketStore = new Map();
 const userTicketCount = new Map();
 let ticketsCategory = null;
+let saleCounter = 1;
+
+// Persistência do contador
+try {
+  const fs = require('fs');
+  if (fs.existsSync('./saleCounter.json')) {
+    const data = JSON.parse(fs.readFileSync('./saleCounter.json', 'utf8'));
+    saleCounter = data.saleCounter || 1;
+  }
+} catch (e) {}
+
+function saveSaleCounter() {
+  try {
+    const fs = require('fs');
+    fs.writeFileSync('./saleCounter.json', JSON.stringify({ saleCounter }, null, 2));
+  } catch (e) {}
+}
 
 function getUserTicketCount(userId) {
   return userTicketCount.get(userId) || 0;
@@ -89,12 +110,13 @@ function createTicket(channelId, data) {
   ticketStore.set(channelId, {
     creatorId: data.creatorId,
     vendorId: data.vendorId || null,
+    vendorLabel: data.vendorLabel || null,
     type: data.type,
     selectedItem: null,
     itemSelected: false,
+    ticketLogs: [],
     itemEmbedMessageId: data.itemEmbedMessageId || null,
     welcomeEmbedMessageId: data.welcomeEmbedMessageId || null,
-    vendorResponded: false,
   });
   incrementUserTickets(data.creatorId);
 }
@@ -104,18 +126,26 @@ function restoreTicket(channelId, data) {
   ticketStore.set(channelId, {
     creatorId: data.creatorId,
     vendorId: data.vendorId || null,
+    vendorLabel: data.vendorLabel || null,
     type: data.type,
     selectedItem: null,
     itemSelected: false,
+    ticketLogs: [],
     itemEmbedMessageId: null,
     welcomeEmbedMessageId: null,
-    vendorResponded: false,
   });
   return ticketStore.get(channelId);
 }
 
 function getTicket(channelId) {
   return ticketStore.get(channelId) || null;
+}
+
+function addTicketLog(channelId, log) {
+  const ticket = ticketStore.get(channelId);
+  if (ticket) {
+    ticket.ticketLogs.push({ timestamp: new Date().toISOString(), message: log });
+  }
 }
 
 function getTicketWithRecovery(channel) {
@@ -129,13 +159,14 @@ function getTicketWithRecovery(channel) {
     const parts = topic.split(':');
     if (parts.length === 3) {
       const [, creatorId, vendorId] = parts;
-      return restoreTicket(channel.id, { creatorId, vendorId, type: 'buy' });
+      const vendor = VENDORS.find(v => v.value === vendorId);
+      return restoreTicket(channel.id, { creatorId, vendorId, vendorLabel: vendor?.label || 'Vendedor', type: 'buy' });
     }
   } else if (topic.startsWith('venda:')) {
     const parts = topic.split(':');
     if (parts.length === 2) {
       const [, creatorId] = parts;
-      return restoreTicket(channel.id, { creatorId, vendorId: null, type: 'sell' });
+      return restoreTicket(channel.id, { creatorId, vendorId: null, vendorLabel: null, type: 'sell' });
     }
   }
 
@@ -156,13 +187,25 @@ function deleteTicket(channelId) {
   ticketStore.delete(channelId);
 }
 
-function canCloseTicket(channel, userId, memberRoles, sellersRoleId) {
-  const ticket = getTicketWithRecovery(channel);
-  if (!ticket) return false;
-  if (ticket.creatorId === userId) return true;
-  if (ticket.type === 'buy' && ticket.vendorId === userId) return true;
-  if (ticket.type === 'sell' && memberRoles.has(sellersRoleId)) return true;
-  return false;
+async function sendTicketLogsToUsers(ticket, channel) {
+  const creator = await channel.guild.members.fetch(ticket.creatorId).catch(() => null);
+  const vendor = ticket.vendorId ? await channel.guild.members.fetch(ticket.vendorId).catch(() => null) : null;
+
+  const logsText = ticket.ticketLogs.map(log => `[${log.timestamp}] ${log.message}`).join('\n') || 'Nenhum log registrado.';
+  
+  const logEmbed = new EmbedBuilder()
+    .setColor(EMBED_COLOR)
+    .setTitle(`📋 Logs do Ticket - ${channel.name}`)
+    .setDescription(`**👤 Criador:** ${creator?.user?.tag || ticket.creatorId}\n**👨‍💼 Vendedor:** ${vendor?.user?.tag || ticket.vendorId || 'N/A'}\n**📦 Item:** ${ticket.selectedItem || 'Não selecionado'}\n**📝 Status:** ${ticket.itemSelected ? 'Item selecionado' : 'Item não selecionado'}\n\n**📜 Mensagens do Ticket:**\n\`\`\`${logsText.slice(0, 1900)}\`\`\``)
+    .setFooter({ text: FOOTER_TEXT })
+    .setThumbnail(THUMBNAIL_URL);
+
+  if (creator) {
+    await creator.send({ embeds: [logEmbed] }).catch(() => {});
+  }
+  if (vendor && vendor.id !== ticket.creatorId) {
+    await vendor.send({ embeds: [logEmbed] }).catch(() => {});
+  }
 }
 
 // ============================================================
@@ -218,7 +261,6 @@ async function buildAdminOverwrites(guild) {
 // EMBEDS
 // ============================================================
 
-// Função para embeds dentro dos tickets (com thumbnail)
 function applyTicketEmbed(embed) {
   return embed
     .setColor(EMBED_COLOR)
@@ -226,7 +268,6 @@ function applyTicketEmbed(embed) {
     .setFooter({ text: FOOTER_TEXT });
 }
 
-// EMBED DO PAINEL PRINCIPAL - TEM IMAGEM GRANDE e NÃO TEM THUMBNAIL
 function buildMainPanelEmbed() {
   return new EmbedBuilder()
     .setColor(EMBED_COLOR)
@@ -268,11 +309,8 @@ function buildItemSelectionEmbed(item = null, itemSelected = false) {
   let selecionarItemText = '';
   
   if (itemSelected) {
-    status = '✅ **Item selecionado com sucesso!**\n✅ Aguardando o vendedor confirmar...';
-    selecionarItemText = '✅ **Item já selecionado!** O vendedor já foi notificado.';
-  } else if (item) {
-    status = '✅ Item selecionado! Aguardando o vendedor...';
-    selecionarItemText = '✅ **Item já selecionado!** O vendedor já foi notificado.';
+    status = '✅ **Item selecionado com sucesso!**\n✅ Utilize os botões abaixo para finalizar o atendimento.';
+    selecionarItemText = '✅ **Item já selecionado!** Escolha uma opção abaixo:';
   } else {
     status = '⏳ Status: Aguardando seleção do item...';
     selecionarItemText = 'Clique no botão **Selecionar Item** abaixo.';
@@ -355,7 +393,7 @@ function buildVendorSelectEmbed() {
         '📌 Após selecionar, o ticket será criado automaticamente.'
       )
   );
-                                                 }
+}
 
 // ============================================================
 // HANDLER: SLASH COMMAND
@@ -465,12 +503,12 @@ async function handleSellButton(interaction) {
 
   createTicket(channel.id, { creatorId: creator.id, vendorId: null, type: 'sell' });
 
-  const closeButton = new ButtonBuilder()
-    .setCustomId('ticket_close')
-    .setLabel('🔴 Fechar Ticket')
-    .setStyle(ButtonStyle.Danger);
+  const selectItemButton = new ButtonBuilder()
+    .setCustomId('ticket_select_item')
+    .setLabel('🛒 Selecionar Item')
+    .setStyle(ButtonStyle.Primary);
 
-  const row = new ActionRowBuilder().addComponents(closeButton);
+  const row = new ActionRowBuilder().addComponents(selectItemButton);
 
   const welcomeMsg = await channel.send({ 
     content: `<@${creator.id}>`,
@@ -483,31 +521,97 @@ async function handleSellButton(interaction) {
 }
 
 // ============================================================
-// HANDLER: BOTÃO FECHAR
+// HANDLER: BOTÃO FECHAR (CANCELADO/RESOLVIDO)
 // ============================================================
 
-async function handleCloseButton(interaction) {
+async function handleCloseOptions(interaction, status) {
   const channel = interaction.channel;
   const userId = interaction.user.id;
-  const memberRoles = interaction.member.roles.cache;
+  const ticket = getTicketWithRecovery(channel);
 
-  const admin = isAdmin(interaction.guild, userId);
-  const canClose = admin || canCloseTicket(channel, userId, memberRoles, SELLERS_ROLE_ID);
-
-  if (!canClose) {
-    return interaction.reply({
-      content: '❌ Apenas o criador do ticket ou o vendedor responsável podem fechá-lo.',
-      flags: 64,
-    });
+  if (!ticket) {
+    return interaction.reply({ content: '❌ Ticket não encontrado.', flags: 64 });
   }
 
-  await interaction.reply({ content: '🔒 Ticket fechado!', flags: 64 });
+  // Apenas o vendedor pode fechar o ticket
+  if (ticket.vendorId !== userId) {
+    return interaction.reply({ content: '❌ Apenas o vendedor responsável pode fechar o ticket.', flags: 64 });
+  }
+
+  if (!ticket.itemSelected) {
+    return interaction.reply({ content: '❌ O cliente precisa selecionar um item antes de fechar o ticket.', flags: 64 });
+  }
+
+  await interaction.deferUpdate();
+
+  addTicketLog(channel.id, `Ticket ${status === 'cancelled' ? 'CANCELADO' : 'RESOLVIDO'} por <@${userId}>`);
+
+  // Envia logs no PV
+  await sendTicketLogsToUsers(ticket, channel);
+
+  if (status === 'completed') {
+    // Dá o cargo para o comprador
+    const buyer = await channel.guild.members.fetch(ticket.creatorId).catch(() => null);
+    const completedRole = channel.guild.roles.cache.get(COMPLETED_ROLE_ID);
+    
+    if (buyer && completedRole) {
+      await buyer.roles.add(completedRole).catch(() => {});
+    }
+
+    // Envia mensagem de avaliação no PV do comprador
+    if (buyer) {
+      const reviewMsg = `⭐ **Avalie o Atendimento!!**
+
+Seu atendimento foi finalizado!
+
+Pedimos que deixe sua avaliação sobre o vendedor neste canal 👇
+
+━━━━━━━━━━━━━━━━━━
+
+✅ Atendimento foi rápido?
+✅ Vendedor foi educado?
+✅ Tudo ocorreu corretamente?
+
+📝 Envie sua opinião ou nota para ajudar a manter o servidor seguro e organizado!!! 
+
+<#${REVIEW_CHANNEL_ID}>
+
+💜 Sua avaliação ajuda outros membros e melhora nosso atendimento!! 
+
+<@${buyer.user.id}>`;
+      
+      await buyer.send({ content: reviewMsg }).catch(() => {});
+    }
+
+    // Envia embed no canal de logs de venda
+    const saleLogChannel = channel.guild.channels.cache.get(SALE_LOG_CHANNEL_ID);
+    if (saleLogChannel) {
+      const vendor = VENDORS.find(v => v.value === ticket.vendorId);
+      const vendorName = vendor ? vendor.label : 'Vendedor';
+      
+      const saleEmbed = new EmbedBuilder()
+        .setColor(EMBED_COLOR)
+        .setTitle('💲 Venda Concluída!')
+        .setDescription(
+          `**💵 Nova venda concluída com sucesso 😉**\n\n` +
+          `**🩵 Proff Número #${saleCounter}**\n\n` +
+          `• **Vendedor:** ${vendorName}\n` +
+          `• **Comprador/Trocador:** <@${ticket.creatorId}>`
+        )
+        .setThumbnail(THUMBNAIL_URL)
+        .setFooter({ text: FOOTER_TEXT });
+      
+      await saleLogChannel.send({ embeds: [saleEmbed] });
+      saleCounter++;
+      saveSaleCounter();
+    }
+  }
 
   deleteTicket(channel.id);
 
   setTimeout(async () => {
     try { 
-      await channel.delete('Ticket encerrado pelo usuário.');
+      await channel.delete(`Ticket ${status === 'cancelled' ? 'cancelado' : 'resolvido'} pelo vendedor.`);
       if (channel.guild) {
         const category = channel.guild.channels.cache.get(TICKETS_CATEGORY_ID);
         const channelsInCategory = channel.guild.channels.cache.filter(
@@ -536,7 +640,7 @@ async function handleSelectItemButton(interaction) {
 
   if (ticket.itemSelected) {
     return interaction.reply({ 
-      content: '❌ Você já selecionou um item para este ticket! Aguarde o vendedor.',
+      content: '❌ Você já selecionou um item para este ticket!',
       flags: 64 
     });
   }
@@ -553,34 +657,6 @@ async function handleSelectItemButton(interaction) {
 
   modal.addComponents(new ActionRowBuilder().addComponents(itemInput));
   await interaction.showModal(modal);
-}
-
-// ============================================================
-// HANDLER: BOTÃO NOTIFICAR VENDEDOR
-// ============================================================
-
-async function handleNotifyVendorButton(interaction) {
-  const ticket = getTicketWithRecovery(interaction.channel);
-  const admin = isAdmin(interaction.guild, interaction.user.id);
-
-  if (!ticket || (!admin && ticket.creatorId !== interaction.user.id)) {
-    return interaction.reply({ content: '❌ Apenas o criador do ticket pode notificar o vendedor.', flags: 64 });
-  }
-
-  if (!ticket.vendorId) {
-    return interaction.reply({ content: '❌ Nenhum vendedor associado a este ticket.', flags: 64 });
-  }
-
-  if (!ticket.selectedItem) {
-    return interaction.reply({ 
-      content: '❌ Você precisa selecionar um item primeiro antes de notificar o vendedor!',
-      flags: 64 
-    });
-  }
-
-  await interaction.reply({
-    content: `🔔 <@${ticket.vendorId}>, você tem um cliente aguardando atendimento neste ticket!\n📦 Item solicitado: **${ticket.selectedItem}**`,
-  });
 }
 
 // ============================================================
@@ -648,24 +724,20 @@ async function handleVendorSelect(interaction) {
     parent: category.id,
   });
 
-  createTicket(channel.id, { creatorId: creator.id, vendorId, type: 'buy' });
+  createTicket(channel.id, { creatorId: creator.id, vendorId, vendorLabel, type: 'buy' });
 
-  const closeButton = new ButtonBuilder()
-    .setCustomId('ticket_close')
-    .setLabel('🔴 Fechar Ticket')
-    .setStyle(ButtonStyle.Danger);
+  const selectItemButton = new ButtonBuilder()
+    .setCustomId('ticket_select_item')
+    .setLabel('🛒 Selecionar Item')
+    .setStyle(ButtonStyle.Primary);
 
-  const selectItemRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('ticket_select_item').setLabel('🛒 Selecionar Item').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('ticket_notify_vendor').setLabel('🔔 Notificar Vendedor').setStyle(ButtonStyle.Success),
-    closeButton
-  );
+  const row = new ActionRowBuilder().addComponents(selectItemButton);
 
   await channel.send({
     content: `<@${creator.id}> <@${vendorId}>`,
   });
 
-  const itemMsg = await channel.send({ embeds: [buildBuyTicketWelcomeEmbed(creator, vendorId)], components: [selectItemRow] });
+  const itemMsg = await channel.send({ embeds: [buildBuyTicketWelcomeEmbed(creator, vendorId)], components: [row] });
   updateTicket(channel.id, { itemEmbedMessageId: itemMsg.id });
 
   await interaction.editReply({
@@ -705,30 +777,34 @@ async function handleItemSelectModal(interaction) {
   
   await interaction.deferUpdate();
 
+  addTicketLog(interaction.channel.id, `Item selecionado: ${itemName} por <@${interaction.user.id}>`);
+
   const { itemEmbedMessageId } = ticket;
 
-  const closeButton = new ButtonBuilder()
-    .setCustomId('ticket_close')
-    .setLabel('🔴 Fechar Ticket')
-    .setStyle(ButtonStyle.Danger);
+  const cancelButton = new ButtonBuilder()
+    .setCustomId('ticket_close_cancelled')
+    .setLabel('❌ Cancelado')
+    .setStyle(ButtonStyle.Secondary);
 
-  const selectItemRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('ticket_notify_vendor').setLabel('🔔 Notificar Vendedor').setStyle(ButtonStyle.Success),
-    closeButton
-  );
+  const completeButton = new ButtonBuilder()
+    .setCustomId('ticket_close_completed')
+    .setLabel('✅ Resolvido')
+    .setStyle(ButtonStyle.Success);
+
+  const closeRow = new ActionRowBuilder().addComponents(cancelButton, completeButton);
 
   if (itemEmbedMessageId) {
     try {
       const msg = await interaction.channel.messages.fetch(itemEmbedMessageId);
-      await msg.edit({ embeds: [buildItemSelectionEmbed(itemName, true)], components: [selectItemRow] });
+      await msg.edit({ embeds: [buildItemSelectionEmbed(itemName, true)], components: [closeRow] });
     } catch {
-      await interaction.channel.send({ embeds: [buildItemSelectionEmbed(itemName, true)], components: [selectItemRow] });
+      await interaction.channel.send({ embeds: [buildItemSelectionEmbed(itemName, true)], components: [closeRow] });
     }
   } else {
-    await interaction.channel.send({ embeds: [buildItemSelectionEmbed(itemName, true)], components: [selectItemRow] });
+    await interaction.channel.send({ embeds: [buildItemSelectionEmbed(itemName, true)], components: [closeRow] });
   }
   
-  await interaction.channel.send(`✅ **Item selecionado com sucesso!**\n📦 Item: **${itemName}**\n\nAgora clique no botão **"Notificar Vendedor"** para chamar o vendedor.`);
+  await interaction.channel.send(`✅ **Item selecionado com sucesso!**\n📦 Item: **${itemName}**\n\nAgora o vendedor pode finalizar o atendimento usando os botões acima.`);
 }
 
 // ============================================================
@@ -737,6 +813,21 @@ async function handleItemSelectModal(interaction) {
 
 async function handleInteraction(interaction) {
   try {
+    // Coleta logs para tickets
+    if (interaction.channel && (interaction.channel.topic?.startsWith('compra:') || interaction.channel.topic?.startsWith('venda:'))) {
+      const ticket = getTicketWithRecovery(interaction.channel);
+      if (ticket && !interaction.isButton() && !interaction.isStringSelectMenu() && !interaction.isModalSubmit()) {
+        let logMessage = '';
+        if (interaction.isChatInputCommand()) logMessage = `Comando usado: /${interaction.commandName}`;
+        else if (interaction.isMessageContextMenuCommand()) logMessage = `Menu de contexto usado`;
+        else if (interaction.isUserContextMenuCommand()) logMessage = `Menu de usuário usado`;
+        
+        if (logMessage) {
+          addTicketLog(interaction.channel.id, `${interaction.user.tag} (${interaction.user.id}): ${logMessage}`);
+        }
+      }
+    }
+
     if (interaction.isChatInputCommand()) {
       await handleCommand(interaction);
       return;
@@ -746,9 +837,9 @@ async function handleInteraction(interaction) {
       switch (interaction.customId) {
         case 'ticket_buy':           return handleBuyButton(interaction);
         case 'ticket_sell':          return handleSellButton(interaction);
-        case 'ticket_close':         return handleCloseButton(interaction);
+        case 'ticket_close_cancelled': return handleCloseOptions(interaction, 'cancelled');
+        case 'ticket_close_completed': return handleCloseOptions(interaction, 'completed');
         case 'ticket_select_item':   return handleSelectItemButton(interaction);
-        case 'ticket_notify_vendor': return handleNotifyVendorButton(interaction);
       }
       return;
     }
@@ -771,6 +862,14 @@ async function handleInteraction(interaction) {
     } catch {}
   }
 }
+
+// Adiciona listener para mensagens também (logs)
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  if (message.channel.topic?.startsWith('compra:') || message.channel.topic?.startsWith('venda:')) {
+    addTicketLog(message.channel.id, `${message.author.tag} (${message.author.id}): ${message.content.slice(0, 100)}`);
+  }
+});
 
 // ============================================================
 // BOT
