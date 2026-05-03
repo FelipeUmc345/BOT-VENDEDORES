@@ -19,6 +19,8 @@ const {
   Routes,
   SlashCommandBuilder,
 } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
 // ============================================================
 // CONFIGURAÇÕES
@@ -74,7 +76,6 @@ let saleCounter = 1;
 
 // Persistência do contador
 try {
-  const fs = require('fs');
   if (fs.existsSync('./saleCounter.json')) {
     const data = JSON.parse(fs.readFileSync('./saleCounter.json', 'utf8'));
     saleCounter = data.saleCounter || 1;
@@ -83,7 +84,6 @@ try {
 
 function saveSaleCounter() {
   try {
-    const fs = require('fs');
     fs.writeFileSync('./saleCounter.json', JSON.stringify({ saleCounter }, null, 2));
   } catch (e) {}
 }
@@ -187,25 +187,110 @@ function deleteTicket(channelId) {
   ticketStore.delete(channelId);
 }
 
-async function sendTicketLogsToUsers(ticket, channel) {
-  const creator = await channel.guild.members.fetch(ticket.creatorId).catch(() => null);
+async function sendTicketLogsAsHTML(ticket, channel, status) {
   const vendor = ticket.vendorId ? await channel.guild.members.fetch(ticket.vendorId).catch(() => null) : null;
-
-  const logsText = ticket.ticketLogs.map(log => `[${log.timestamp}] ${log.message}`).join('\n') || 'Nenhum log registrado.';
   
-  const logEmbed = new EmbedBuilder()
-    .setColor(EMBED_COLOR)
-    .setTitle(`📋 Logs do Ticket - ${channel.name}`)
-    .setDescription(`**👤 Criador:** ${creator?.user?.tag || ticket.creatorId}\n**👨‍💼 Vendedor:** ${vendor?.user?.tag || ticket.vendorId || 'N/A'}\n**📦 Item:** ${ticket.selectedItem || 'Não selecionado'}\n**📝 Status:** ${ticket.itemSelected ? 'Item selecionado' : 'Item não selecionado'}\n\n**📜 Mensagens do Ticket:**\n\`\`\`${logsText.slice(0, 1900)}\`\`\``)
-    .setFooter({ text: FOOTER_TEXT })
-    .setThumbnail(THUMBNAIL_URL);
+  if (!vendor) return;
 
-  if (creator) {
-    await creator.send({ embeds: [logEmbed] }).catch(() => {});
+  // Coletar todas as mensagens do canal
+  const messages = [];
+  let lastId = null;
+  let hasMore = true;
+  
+  while (hasMore) {
+    const options = { limit: 100 };
+    if (lastId) options.before = lastId;
+    
+    const fetched = await channel.messages.fetch(options);
+    if (fetched.size === 0) {
+      hasMore = false;
+    } else {
+      messages.push(...fetched.values());
+      lastId = fetched.last().id;
+      if (fetched.size < 100) hasMore = false;
+    }
   }
-  if (vendor && vendor.id !== ticket.creatorId) {
-    await vendor.send({ embeds: [logEmbed] }).catch(() => {});
+  
+  // Ordenar mensagens do mais antigo para o mais novo
+  messages.reverse();
+  
+  // Gerar HTML
+  const guildIcon = channel.guild.iconURL() || 'https://cdn.discordapp.com/icons/1301022858599989268/4201cd1159a9bd4549d2011726f80da6.webp';
+  const channelName = channel.name;
+  const guildName = channel.guild.name;
+  
+  let messagesHTML = '';
+  
+  for (const msg of messages) {
+    const member = channel.guild.members.cache.get(msg.author.id);
+    const roleColor = member?.roles?.color?.toString() || '#ffffff';
+    const avatarURL = msg.author.displayAvatarURL({ size: 32 });
+    const isBot = msg.author.bot;
+    const timestamp = msg.createdAt.toISOString();
+    const content = msg.content || '';
+    
+    // Processar anexos
+    let attachmentsHTML = '';
+    if (msg.attachments.size > 0) {
+      attachmentsHTML = '<discord-attachments slot="attachments">';
+      for (const [, attach] of msg.attachments) {
+        attachmentsHTML += `<discord-attachment type="image" size="${(attach.size / 1024).toFixed(2)} KB" slot="attachment" url="${attach.url}"></discord-attachment>`;
+      }
+      attachmentsHTML += '</discord-attachments>';
+    }
+    
+    messagesHTML += `
+      <discord-message id="m-${msg.id}" timestamp="${timestamp}" edited="${msg.editedAt ? 'true' : 'false'}" highlight="false" profile="${msg.author.id}">
+        ${content ? content.replace(/</g, '&lt;').replace(/>/g, '&gt;') : ''}
+        ${attachmentsHTML}
+      </discord-message>
+    `;
   }
+  
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logs do Ticket - ${channelName}</title>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@derockdev/discord-components-core@^3.6.1/dist/derockdev-discord-components-core/derockdev-discord-components-core.esm.js"></script>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background-color: #36393f;
+        }
+        discord-messages {
+            max-width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <discord-messages>
+        <discord-header guild="${guildName}" channel="${channelName}" icon="${guildIcon}">
+            Logs do ticket - ${channelName}
+        </discord-header>
+        ${messagesHTML}
+        <div style="text-align:center;width:100%;padding:20px;color:#ffffff;">
+            🔥 𝙎𝙣𝙞𝙥𝙚𝙭ᴸᵘᵃ ᶜᵒᵐᵐᵘⁿⁱᵗʸ 👻 ❤️ Ticket ${status === 'completed' ? 'RESOLVIDO' : 'CANCELADO'} em ${new Date().toLocaleString()}
+        </div>
+    </discord-messages>
+</body>
+</html>`;
+  
+  // Salvar arquivo temporário e enviar
+  const filePath = path.join(__dirname, `ticket_logs_${channel.id}.html`);
+  fs.writeFileSync(filePath, html);
+  
+  await vendor.send({
+    content: `📋 **Logs do Ticket - ${channelName}**\nTicket ${status === 'completed' ? 'RESOLVIDO' : 'CANCELADO'}`,
+    files: [filePath]
+  }).catch(() => {});
+  
+  // Limpar arquivo temporário após enviar
+  setTimeout(() => {
+    try { fs.unlinkSync(filePath); } catch(e) {}
+  }, 5000);
 }
 
 // ============================================================
@@ -393,7 +478,7 @@ function buildVendorSelectEmbed() {
         '📌 Após selecionar, o ticket será criado automaticamente.'
       )
   );
-}
+    }
 
 // ============================================================
 // HANDLER: SLASH COMMAND
@@ -546,8 +631,8 @@ async function handleCloseOptions(interaction, status) {
 
   addTicketLog(channel.id, `Ticket ${status === 'cancelled' ? 'CANCELADO' : 'RESOLVIDO'} por <@${userId}>`);
 
-  // Envia logs no PV
-  await sendTicketLogsToUsers(ticket, channel);
+  // Envia logs em formato HTML apenas para o vendedor
+  await sendTicketLogsAsHTML(ticket, channel, status);
 
   if (status === 'completed') {
     // Dá o cargo para o comprador
@@ -558,7 +643,7 @@ async function handleCloseOptions(interaction, status) {
       await buyer.roles.add(completedRole).catch(() => {});
     }
 
-    // Envia mensagem de avaliação no PV do comprador
+    // Envia mensagem de avaliação no PV do comprador (sem logs)
     if (buyer) {
       const reviewMsg = `⭐ **Avalie o Atendimento!!**
 
@@ -591,9 +676,9 @@ Pedimos que deixe sua avaliação sobre o vendedor neste canal 👇
       
       const saleEmbed = new EmbedBuilder()
         .setColor(EMBED_COLOR)
-        .setTitle(`## 💲 Venda Concluída! #${saleCounter}`)
+        .setTitle(`💲 Venda Concluída! #${saleCounter}`)
         .setDescription(
-          `**💵 Nova venda concluída com sucesso 😉**\n\n` +
+          `**💵 Nova venda/Troca concluída com sucesso 😉**\n\n` +
           `**🩵 Proff Número #${saleCounter}**\n\n` +
           `• **Vendedor(a):** ${vendorName}\n` +
           `• **Comprador/Trocador:** <@${ticket.creatorId}>\n` +
@@ -804,8 +889,6 @@ async function handleItemSelectModal(interaction) {
   } else {
     await interaction.channel.send({ embeds: [buildItemSelectionEmbed(itemName, true)], components: [closeRow] });
   }
-  
-  // Não envia mais a mensagem de confirmação extra
 }
 
 // ============================================================
