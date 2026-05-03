@@ -393,7 +393,7 @@ function buildVendorSelectEmbed() {
         '📌 Após selecionar, o ticket será criado automaticamente.'
       )
   );
-  }
+}
 
 // ============================================================
 // HANDLER: SLASH COMMAND
@@ -591,12 +591,13 @@ Pedimos que deixe sua avaliação sobre o vendedor neste canal 👇
       
       const saleEmbed = new EmbedBuilder()
         .setColor(EMBED_COLOR)
-        .setTitle('💲 Venda Concluída!')
+        .setTitle(`## 💲 Venda Concluída! #${saleCounter}`)
         .setDescription(
           `**💵 Nova venda concluída com sucesso 😉**\n\n` +
           `**🩵 Proff Número #${saleCounter}**\n\n` +
-          `• **Vendedor:** ${vendorName}\n` +
-          `• **Comprador/Trocador:** <@${ticket.creatorId}>`
+          `• **Vendedor(a):** ${vendorName}\n` +
+          `• **Comprador/Trocador:** <@${ticket.creatorId}>\n` +
+          `• **Item Comprado/Trocado:** ${ticket.selectedItem}`
         )
         .setThumbnail(THUMBNAIL_URL)
         .setFooter({ text: FOOTER_TEXT });
@@ -804,7 +805,7 @@ async function handleItemSelectModal(interaction) {
     await interaction.channel.send({ embeds: [buildItemSelectionEmbed(itemName, true)], components: [closeRow] });
   }
   
-  await interaction.channel.send(`✅ **Item selecionado com sucesso!**\n📦 Item: **${itemName}**\n\nAgora o vendedor pode finalizar o atendimento usando os botões acima.`);
+  // Não envia mais a mensagem de confirmação extra
 }
 
 // ============================================================
