@@ -393,7 +393,7 @@ function buildVendorSelectEmbed() {
         '📌 Após selecionar, o ticket será criado automaticamente.'
       )
   );
-}
+  }
 
 // ============================================================
 // HANDLER: SLASH COMMAND
@@ -863,14 +863,6 @@ async function handleInteraction(interaction) {
   }
 }
 
-// Adiciona listener para mensagens também (logs)
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
-  if (message.channel.topic?.startsWith('compra:') || message.channel.topic?.startsWith('venda:')) {
-    addTicketLog(message.channel.id, `${message.author.tag} (${message.author.id}): ${message.content.slice(0, 100)}`);
-  }
-});
-
 // ============================================================
 // BOT
 // ============================================================
@@ -896,6 +888,14 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
   ],
   partials: [Partials.Channel, Partials.Message],
+});
+
+// ✅ AGORA SIM o client existe - Listener de mensagens para logs
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  if (message.channel.topic?.startsWith('compra:') || message.channel.topic?.startsWith('venda:')) {
+    addTicketLog(message.channel.id, `${message.author.tag} (${message.author.id}): ${message.content.slice(0, 100)}`);
+  }
 });
 
 client.once('ready', async () => {
