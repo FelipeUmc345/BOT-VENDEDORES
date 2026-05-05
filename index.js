@@ -52,18 +52,64 @@ const REVIEW_CHANNEL_ID = '1437628585115648041';
 const SALE_LOG_CHANNEL_ID = '1439400182142734509';
 const COMPLETED_ROLE_ID = '1397781111219687485';
 
-// Lista de vendedores
+// Lista de vendedores com IDs para menção
 const VENDORS = [
-  { label: 'Kpax',    value: '1030955815114391592', description: 'Escolha o Vendedor Kpax para trocar ou comprar.' },
-  { label: 'KZ',      value: '1404535359886463137', description: 'Escolha o Vendedor KZ para trocar ou comprar.' },
-  { label: 'Japa',    value: '1411787311884140574', description: 'Escolha o vendedor Japa para trocar ou comprar.' },
-  { label: 'Spectre', value: '1267640943633240096', description: 'Escolha o vendedor Spectre para trocar ou comprar.' },
-  { label: 'Lordz',   value: '1261370166172979220', description: 'Escolha o vendedor Lordz para trocar ou comprar.' },
-  { label: 'Pedro',   value: '1428541375896490087', description: 'Escolha o vendedor Pedro para trocar ou comprar.' },
-  { label: 'Oruam',   value: '1395226016624017571', description: 'Escolha o vendedor Oruam para trocar ou comprar.' },
-  { label: 'Laura',   value: '1236426708110934110', description: 'Escolha o vendedor Laura para trocar ou comprar.' },
-  { label: 'Baby',    value: '1146443214312718396', description: 'Escolha o vendedor Baby para trocar ou comprar.' },
+  { label: 'Kpax',    value: '1030955815114391592', mention: '<@1030955815114391592>', description: 'Escolha o Vendedor Kpax para trocar ou comprar.' },
+  { label: 'KZ',      value: '1404535359886463137', mention: '<@1404535359886463137>', description: 'Escolha o Vendedor KZ para trocar ou comprar.' },
+  { label: 'Japa',    value: '1411787311884140574', mention: '<@1411787311884140574>', description: 'Escolha o vendedor Japa para trocar ou comprar.' },
+  { label: 'Spectre', value: '1267640943633240096', mention: '<@1267640943633240096>', description: 'Escolha o vendedor Spectre para trocar ou comprar.' },
+  { label: 'Lordz',   value: '1261370166172979220', mention: '<@1261370166172979220>', description: 'Escolha o vendedor Lordz para trocar ou comprar.' },
+  { label: 'Pedro',   value: '1428541375896490087', mention: '<@1428541375896490087>', description: 'Escolha o vendedor Pedro para trocar ou comprar.' },
+  { label: 'Oruam',   value: '1395226016624017571', mention: '<@1395226016624017571>', description: 'Escolha o vendedor Oruam para trocar ou comprar.' },
+  { label: 'Laura',   value: '1236426708110934110', mention: '<@1236426708110934110>', description: 'Escolha o vendedor Laura para trocar ou comprar.' },
+  { label: 'Baby',    value: '1146443214312718396', mention: '<@1146443214312718396>', description: 'Escolha o vendedor Baby para trocar ou comprar.' },
 ];
+
+// ============================================================
+// SISTEMA DE CONTADOR PERSISTENTE
+// ============================================================
+
+const COUNTER_FILE = path.join(__dirname, 'saleCounter.json');
+let saleCounter = 4; // COMEÇANDO DO 4 PORQUE O BOT ANTIGO PAROU NO 3
+
+// Função para carregar o contador do arquivo
+function loadSaleCounter() {
+  try {
+    if (fs.existsSync(COUNTER_FILE)) {
+      const data = JSON.parse(fs.readFileSync(COUNTER_FILE, 'utf8'));
+      saleCounter = data.saleCounter || 4;
+      console.log(`📊 Contador de vendas carregado: #${saleCounter}`);
+    } else {
+      // Se o arquivo não existe, cria com valor inicial 4
+      saveSaleCounter();
+      console.log(`📊 Arquivo de contador criado com valor inicial: #${saleCounter}`);
+    }
+  } catch (e) {
+    console.error('[COUNTER] Erro ao carregar contador:', e);
+    saleCounter = 4;
+  }
+}
+
+// Função para salvar o contador no arquivo
+function saveSaleCounter() {
+  try {
+    fs.writeFileSync(COUNTER_FILE, JSON.stringify({ saleCounter }, null, 2));
+    console.log(`📊 Contador salvo: #${saleCounter}`);
+  } catch (e) {
+    console.error('[COUNTER] Erro ao salvar contador:', e);
+  }
+}
+
+// Função para incrementar e obter o próximo número
+function getNextSaleNumber() {
+  const current = saleCounter;
+  saleCounter++;
+  saveSaleCounter();
+  return current;
+}
+
+// Carregar o contador na inicialização
+loadSaleCounter();
 
 // ============================================================
 // TICKET STORE
@@ -72,21 +118,6 @@ const VENDORS = [
 const ticketStore = new Map();
 const userTicketCount = new Map();
 let ticketsCategory = null;
-let saleCounter = 1;
-
-// Persistência do contador
-try {
-  if (fs.existsSync('./saleCounter.json')) {
-    const data = JSON.parse(fs.readFileSync('./saleCounter.json', 'utf8'));
-    saleCounter = data.saleCounter || 1;
-  }
-} catch (e) {}
-
-function saveSaleCounter() {
-  try {
-    fs.writeFileSync('./saleCounter.json', JSON.stringify({ saleCounter }, null, 2));
-  } catch (e) {}
-}
 
 function getUserTicketCount(userId) {
   return userTicketCount.get(userId) || 0;
@@ -111,7 +142,8 @@ function createTicket(channelId, data) {
     creatorId: data.creatorId,
     vendorId: data.vendorId || null,
     vendorLabel: data.vendorLabel || null,
-    type: 'buy', // Sempre compra agora
+    vendorMention: data.vendorMention || null,
+    type: 'buy',
     selectedItem: null,
     itemSelected: false,
     ticketLogs: [],
@@ -127,6 +159,7 @@ function restoreTicket(channelId, data) {
     creatorId: data.creatorId,
     vendorId: data.vendorId || null,
     vendorLabel: data.vendorLabel || null,
+    vendorMention: data.vendorMention || null,
     type: 'buy',
     selectedItem: null,
     itemSelected: false,
@@ -160,7 +193,13 @@ function getTicketWithRecovery(channel) {
     if (parts.length === 3) {
       const [, creatorId, vendorId] = parts;
       const vendor = VENDORS.find(v => v.value === vendorId);
-      return restoreTicket(channel.id, { creatorId, vendorId, vendorLabel: vendor?.label || 'Vendedor', type: 'buy' });
+      return restoreTicket(channel.id, { 
+        creatorId, 
+        vendorId, 
+        vendorLabel: vendor?.label || 'Vendedor',
+        vendorMention: vendor?.mention || `<@${vendorId}>`,
+        type: 'buy' 
+      });
     }
   }
 
@@ -449,7 +488,7 @@ function buildVendorSelectEmbed() {
         '📌 Após selecionar, o ticket será criado automaticamente.'
       )
   );
-    }
+}
 
 // ============================================================
 // HANDLER: SLASH COMMAND
@@ -566,15 +605,16 @@ Pedimos que deixe sua avaliação sobre o vendedor neste canal 👇
     const saleLogChannel = channel.guild.channels.cache.get(SALE_LOG_CHANNEL_ID);
     if (saleLogChannel) {
       const vendor = VENDORS.find(v => v.value === ticket.vendorId);
-      const vendorName = vendor ? vendor.label : 'Vendedor';
+      const vendorMention = vendor ? vendor.mention : `<@${ticket.vendorId}>`;
+      const saleNumber = getNextSaleNumber(); // Pega o próximo número e já incrementa
       
       const saleEmbed = new EmbedBuilder()
         .setColor(EMBED_COLOR)
-        .setTitle(`💲 Venda Concluída! #${saleCounter}`)
+        .setTitle(`💲 Venda Concluída! #${saleNumber}`)
         .setDescription(
           `**💵 Nova venda/Troca concluída com sucesso 😉**\n\n` +
-          `**🩵 Proff Número #${saleCounter}**\n\n` +
-          `• **Vendedor(a):** ${vendorName}\n` +
+          `**🩵 Proff Número #${saleNumber}**\n\n` +
+          `• **Vendedor(a):** ${vendorMention}\n` +
           `• **Comprador/Trocador:** <@${ticket.creatorId}>\n` +
           `• **Item Comprado/Trocado:** ${ticket.selectedItem}`
         )
@@ -582,8 +622,6 @@ Pedimos que deixe sua avaliação sobre o vendedor neste canal 👇
         .setFooter({ text: FOOTER_TEXT });
       
       await saleLogChannel.send({ embeds: [saleEmbed] });
-      saleCounter++;
-      saveSaleCounter();
     }
   }
 
@@ -659,6 +697,7 @@ async function handleVendorSelect(interaction) {
 
   const vendor = VENDORS.find((v) => v.value === vendorId);
   const vendorLabel = vendor ? vendor.label : 'Vendedor';
+  const vendorMention = vendor ? vendor.mention : `<@${vendorId}>`;
 
   const existing = guild.channels.cache.find((ch) => ch.topic === `compra:${creator.id}:${vendorId}`);
   if (existing) {
@@ -704,7 +743,7 @@ async function handleVendorSelect(interaction) {
     parent: category.id,
   });
 
-  createTicket(channel.id, { creatorId: creator.id, vendorId, vendorLabel, type: 'buy' });
+  createTicket(channel.id, { creatorId: creator.id, vendorId, vendorLabel, vendorMention, type: 'buy' });
 
   const selectItemButton = new ButtonBuilder()
     .setCustomId('ticket_select_item')
@@ -714,7 +753,7 @@ async function handleVendorSelect(interaction) {
   const row = new ActionRowBuilder().addComponents(selectItemButton);
 
   await channel.send({
-    content: `<@${creator.id}> <@${vendorId}>`,
+    content: `<@${creator.id}> ${vendorMention}`,
   });
 
   const itemMsg = await channel.send({ embeds: [buildBuyTicketWelcomeEmbed(creator, vendorId)], components: [row] });
