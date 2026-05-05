@@ -52,7 +52,7 @@ const REVIEW_CHANNEL_ID = '1437628585115648041';
 const SALE_LOG_CHANNEL_ID = '1439400182142734509';
 const COMPLETED_ROLE_ID = '1397781111219687485';
 
-// Lista de vendedores (Vitinho removido)
+// Lista de vendedores
 const VENDORS = [
   { label: 'Kpax',    value: '1030955815114391592', description: 'Escolha o Vendedor Kpax para trocar ou comprar.' },
   { label: 'KZ',      value: '1404535359886463137', description: 'Escolha o Vendedor KZ para trocar ou comprar.' },
@@ -111,7 +111,7 @@ function createTicket(channelId, data) {
     creatorId: data.creatorId,
     vendorId: data.vendorId || null,
     vendorLabel: data.vendorLabel || null,
-    type: data.type,
+    type: 'buy', // Sempre compra agora
     selectedItem: null,
     itemSelected: false,
     ticketLogs: [],
@@ -127,7 +127,7 @@ function restoreTicket(channelId, data) {
     creatorId: data.creatorId,
     vendorId: data.vendorId || null,
     vendorLabel: data.vendorLabel || null,
-    type: data.type,
+    type: 'buy',
     selectedItem: null,
     itemSelected: false,
     ticketLogs: [],
@@ -161,12 +161,6 @@ function getTicketWithRecovery(channel) {
       const [, creatorId, vendorId] = parts;
       const vendor = VENDORS.find(v => v.value === vendorId);
       return restoreTicket(channel.id, { creatorId, vendorId, vendorLabel: vendor?.label || 'Vendedor', type: 'buy' });
-    }
-  } else if (topic.startsWith('venda:')) {
-    const parts = topic.split(':');
-    if (parts.length === 2) {
-      const [, creatorId] = parts;
-      return restoreTicket(channel.id, { creatorId, vendorId: null, vendorLabel: null, type: 'sell' });
     }
   }
 
@@ -360,25 +354,19 @@ function buildMainPanelEmbed() {
     .setDescription(
       'Nosso sistema de tickets foi criado para facilitar compras e vendas dentro do servidor, mantendo tudo organizado, seguro e rápido.\n\n' +
       '━━━━━━━━━━━━━━━━━━\n\n' +
-      '**«1 - Ticket de Compra**\n\n' +
+      '**« Ticket de Compra**\n\n' +
       '- Abra um Ticket de Compra caso queira adquirir um item.\n' +
       '- ✅ Escolha um vendedor específico\n' +
       '- ✅ Apenas você e o vendedor terão acesso\n' +
       '- ✅ Atendimento rápido e privado\n\n' +
       '━━━━━━━━━━━━━━━━━━\n\n' +
-      '**«2 - Ticket de Venda**\n\n' +
-      '- Abra um Ticket de Venda caso queira vender seus itens.\n' +
-      '- ✅ Todos os vendedores autorizados podem visualizar\n' +
-      '- ✅ O primeiro vendedor disponível realizará o atendimento\n' +
-      '- ✅ Processo rápido e organizado\n\n' +
-      '━━━━━━━━━━━━━━━━━━\n\n' +
-      '**«3 - Regras Importantes**\n\n' +
+      '**« Regras Importantes**\n\n' +
       '- ⚠️ Não envie Pix antes de confirmar o vendedor\n' +
       '- ⚠️ Utilize apenas tickets oficiais\n' +
       '- ⚠️ Evite negociações fora do servidor\n' +
       '- ⚠️ A staff não se responsabiliza por acordos fora dos tickets\n\n' +
       '━━━━━━━━━━━━━━━━━━\n\n' +
-      '**«4 - Atendimento**\n\n' +
+      '**« Atendimento**\n\n' +
       '- 🔥 Atendimento rápido\n' +
       '- 📋 Organização total\n' +
       '- 🔒 Segurança garantida\n\n' +
@@ -447,23 +435,6 @@ function buildBuyTicketWelcomeEmbed(creator, vendorId) {
   );
 }
 
-function buildSellTicketWelcomeEmbed(creator) {
-  return applyTicketEmbed(
-    new EmbedBuilder()
-      .setTitle('🎫 Ticket criado com sucesso!')
-      .setDescription(
-        `Olá <@${creator.id}>, seu atendimento de **venda** foi iniciado ✅\n\n` +
-        '━━━━━━━━━━━━━━━━━━\n\n' +
-        `👤 **Usuário:**  \n${creator.username} (${creator.id})\n\n` +
-        `📂 **Categoria Selecionada:**  \nVenda\n\n` +
-        '━━━━━━━━━━━━━━━━━━\n\n' +
-        '⏳ **Status:** Aguardando algum comprador responder...\n\n' +
-        '━━━━━━━━━━━━━━━━━━\n\n' +
-        '⚠️ Evite spam ou marcações desnecessárias enquanto aguarda.'
-      )
-  );
-}
-
 function buildVendorSelectEmbed() {
   return applyTicketEmbed(
     new EmbedBuilder()
@@ -499,12 +470,7 @@ async function handleCommand(interaction) {
     .setLabel('Comprar/Trocar')
     .setStyle(ButtonStyle.Success);
 
-  const sellButton = new ButtonBuilder()
-    .setCustomId('ticket_sell')
-    .setLabel('Vender')
-    .setStyle(ButtonStyle.Danger);
-
-  const row = new ActionRowBuilder().addComponents(buyButton, sellButton);
+  const row = new ActionRowBuilder().addComponents(buyButton);
 
   await interaction.reply({ content: '✅', flags: 64 });
   await interaction.channel.send({ embeds: [buildMainPanelEmbed()], components: [row] });
@@ -531,78 +497,6 @@ async function handleBuyButton(interaction) {
   const row = new ActionRowBuilder().addComponents(selectMenu);
 
   await interaction.reply({ embeds: [buildVendorSelectEmbed()], components: [row], flags: 64 });
-}
-
-// ============================================================
-// HANDLER: BOTÃO VENDER
-// ============================================================
-
-async function handleSellButton(interaction) {
-  if (hasReachedTicketLimit(interaction.user.id)) {
-    return interaction.reply({
-      content: `❌ Você já possui **${MAX_TICKETS_PER_USER} tickets** abertos. Feche um antes de abrir outro.`,
-      flags: 64,
-    });
-  }
-
-  await interaction.deferReply({ flags: 64 });
-
-  const guild = interaction.guild;
-  const creatorMember = interaction.member;
-  const creator = interaction.user;
-
-  const existing = guild.channels.cache.find((ch) => ch.topic === `venda:${creator.id}`);
-  if (existing) {
-    return interaction.editReply({ content: `❌ Você já possui um ticket de venda aberto: ${existing}` });
-  }
-
-  const category = await getOrCreateTicketsCategory(guild);
-
-  const sellersRole = guild.roles.cache.get(SELLERS_ROLE_ID) ?? await guild.roles.fetch(SELLERS_ROLE_ID);
-  const adminOverwrites = await buildAdminOverwrites(guild);
-
-  const permissionOverwrites = [
-    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-    {
-      id: creatorMember,
-      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles],
-    },
-    ...adminOverwrites,
-  ];
-
-  if (sellersRole) {
-    permissionOverwrites.push({
-      id: sellersRole,
-      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles],
-    });
-  }
-
-  const safeName = creator.username.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 32);
-
-  const channel = await guild.channels.create({
-    name: `ticket-venda-${safeName}`,
-    topic: `venda:${creator.id}`,
-    permissionOverwrites,
-    parent: category.id,
-  });
-
-  createTicket(channel.id, { creatorId: creator.id, vendorId: null, type: 'sell' });
-
-  const selectItemButton = new ButtonBuilder()
-    .setCustomId('ticket_select_item')
-    .setLabel('🛒 Selecionar Item')
-    .setStyle(ButtonStyle.Primary);
-
-  const row = new ActionRowBuilder().addComponents(selectItemButton);
-
-  const welcomeMsg = await channel.send({ 
-    content: `<@${creator.id}>`,
-    embeds: [buildSellTicketWelcomeEmbed(creator)],
-    components: [row]
-  });
-  updateTicket(channel.id, { welcomeEmbedMessageId: welcomeMsg.id });
-
-  await interaction.editReply({ content: `✅ Seu ticket de venda foi criado: ${channel}` });
 }
 
 // ============================================================
@@ -898,7 +792,7 @@ async function handleItemSelectModal(interaction) {
 async function handleInteraction(interaction) {
   try {
     // Coleta logs para tickets
-    if (interaction.channel && (interaction.channel.topic?.startsWith('compra:') || interaction.channel.topic?.startsWith('venda:'))) {
+    if (interaction.channel && interaction.channel.topic?.startsWith('compra:')) {
       const ticket = getTicketWithRecovery(interaction.channel);
       if (ticket && !interaction.isButton() && !interaction.isStringSelectMenu() && !interaction.isModalSubmit()) {
         let logMessage = '';
@@ -920,7 +814,6 @@ async function handleInteraction(interaction) {
     if (interaction.isButton()) {
       switch (interaction.customId) {
         case 'ticket_buy':           return handleBuyButton(interaction);
-        case 'ticket_sell':          return handleSellButton(interaction);
         case 'ticket_close_cancelled': return handleCloseOptions(interaction, 'cancelled');
         case 'ticket_close_completed': return handleCloseOptions(interaction, 'completed');
         case 'ticket_select_item':   return handleSelectItemButton(interaction);
@@ -977,7 +870,7 @@ const client = new Client({
 // ✅ AGORA SIM o client existe - Listener de mensagens para logs
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
-  if (message.channel.topic?.startsWith('compra:') || message.channel.topic?.startsWith('venda:')) {
+  if (message.channel.topic?.startsWith('compra:')) {
     addTicketLog(message.channel.id, `${message.author.tag} (${message.author.id}): ${message.content.slice(0, 100)}`);
   }
 });
